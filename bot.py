@@ -18,6 +18,11 @@ BOT_OWNERS = {322362428883206145}
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
+# Guild config cache to avoid repeated API calls
+GUILD_CONFIG_CACHE = {}
+CACHE_TTL = 600  # 10 minutes
+session = None  # Global session for connection pooling
+
 async def init_db():
     """Initialize database tables via Supabase REST API"""
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -39,46 +44,57 @@ async def init_db():
                 if resp.status in [200, 404]:
                     print("✅ Database initialized successfully")
                     return True
+                elif resp.status == 401:
+                    print("⚠️ Database error: Invalid Supabase credentials (401 Unauthorized)")
+                    return False
                 else:
                     text = await resp.text()
-                    print(f"⚠️ Database error ({resp.status}): {text[:100]}")
+                    print(f"⚠️ Database error ({resp.status}): {text[:150]}")
                     return False
     except Exception as e:
-        print(f"⚠️ Database connection unavailable: {str(e)[:100]}")
+        error_type = type(e).__name__
+        if 'Connection' in error_type:
+            print(f"⚠️ Cannot reach Supabase - check SUPABASE_URL is correct")
+        elif 'Timeout' in error_type:
+            print(f"⚠️ Supabase connection timeout - server may be slow")
+        else:
+            print(f"⚠️ Database connection error: {error_type}")
         return False
 
 async def get_guild_config(guild_id):
-    """Get configuration for a specific guild"""
+    """Get configuration for a specific guild (with caching)"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return None
+    
+    # Check cache first
+    if guild_id in GUILD_CONFIG_CACHE:
+        cached_data, timestamp = GUILD_CONFIG_CACHE[guild_id]
+        if datetime.now(timezone.utc).timestamp() - timestamp < CACHE_TTL:
+            return cached_data
     
     try:
         headers = {
             'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Accept': 'application/vnd.pgrst.object+json'
+            'Authorization': f'Bearer {SUPABASE_KEY}'
         }
         
         url = f"{SUPABASE_URL}/rest/v1/guild_configs?guild_id=eq.{guild_id}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if isinstance(data, list) and data:
-                        return data[0]
-                    elif isinstance(data, dict):
-                        return data
-                    else:
-                        # Create default config
-                        await save_guild_config(guild_id, None, None)
-                        return await get_guild_config(guild_id)
-                elif resp.status == 404:
-                    # Table doesn't exist yet, create config
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                result = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+                if result:
+                    # Cache it
+                    GUILD_CONFIG_CACHE[guild_id] = (result, datetime.now(timezone.utc).timestamp())
+                    return result
+                else:
                     await save_guild_config(guild_id, None, None)
                     return await get_guild_config(guild_id)
+            elif resp.status == 404:
+                await save_guild_config(guild_id, None, None)
+                return await get_guild_config(guild_id)
                 return None
     except Exception as e:
-        # Silently fail for now
         return None
 
 async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id):
@@ -102,16 +118,18 @@ async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id):
         }
         
         url = f"{SUPABASE_URL}/rest/v1/guild_configs"
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data, headers=headers) as resp:
-                return resp.status in [200, 201, 204]
+        async with session.post(url, json=data, headers=headers) as resp:
+            success = resp.status in [200, 201, 204]
+            if success:
+                # Invalidate cache
+                GUILD_CONFIG_CACHE.pop(guild_id, None)
+            return success
     except Exception as e:
-        # Silently fail
         return False
 
 async def log_ban_to_db(guild_id, user_id, username, ban_reason, indicators):
     """Log a ban to the database"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    if not SUPABASE_URL or not SUPABASE_KEY or not session:
         return False
     
     try:
@@ -131,34 +149,49 @@ async def log_ban_to_db(guild_id, user_id, username, ban_reason, indicators):
         }
         
         url = f"{SUPABASE_URL}/rest/v1/ban_history"
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data, headers=headers) as resp:
-                return resp.status in [200, 201, 204]
+        async with session.post(url, json=data, headers=headers) as resp:
+            return resp.status in [200, 201, 204]
     except Exception as e:
-        # Silently fail
         return False
 
 async def get_ban_history(guild_id):
     """Get ban history for a guild"""
     if not SUPABASE_URL or not SUPABASE_KEY:
+        print(f"⚠️ Supabase not configured - cannot fetch ban history")
         return []
     
     try:
         headers = {
             'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Accept': 'application/vnd.pgrst.object+json'
+            'Authorization': f'Bearer {SUPABASE_KEY}'
         }
         
+        # Filter at database level for better performance
         url = f"{SUPABASE_URL}/rest/v1/ban_history?guild_id=eq.{guild_id}&order=banned_at.desc&limit=10"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data if isinstance(data, list) else []
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data if isinstance(data, list) else []
+            elif resp.status == 404:
+                print(f"⚠️ Ban history table not found - run schema.sql in Supabase to create tables")
+                return []
+            else:
+                text = await resp.text()
+                error_msg = text[:200] if text else f"HTTP {resp.status}"
+                print(f"⚠️ Error fetching ban history ({resp.status}): {error_msg}")
                 return []
     except Exception as e:
-        # Silently fail
+        error_type = type(e).__name__
+        # Don't expose error details that may contain secrets
+        if 'Connection' in error_type or 'ClientError' in error_type:
+            print(f"⚠️ Cannot reach Supabase - check SUPABASE_URL is correct and database is running")
+        elif 'Timeout' in error_type:
+            print(f"⚠️ Supabase request timeout - server may be slow or unreachable")
+        elif 'Invalid' in error_type:
+            print(f"⚠️ Invalid request to Supabase - check configuration")
+        else:
+            # Generic error without exposing details
+            print(f"⚠️ Error fetching ban history - database connection failed")
         return []
 
 def get_honeypot_channel(guild):
@@ -169,6 +202,12 @@ def get_log_channel(guild):
 
 @client.event
 async def on_ready():
+    global session
+    if not session:
+        session = aiohttp.ClientSession()
+    
+    await init_db()
+    
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching, name="the honeypot 🪤")
     await client.change_presence(activity=activity)
@@ -294,8 +333,11 @@ async def handle_honeypot_trigger(message):
         print(f"Honeypot triggered by {message.author} (ID: {message.author.id})")
         print(f"Message: {message.content}")
         print(f"Indicators: {indicators}")
-        await message.delete()
+        
+        # Log detection first (before deletion)
         await log_detection(message.guild, message.author, message.content, indicators)
+        
+        # Ban the user
         ban_success = await ban_user(member, indicators, message.guild)
         await log_ban_result(message.guild, message.author, ban_success, indicators)
         
@@ -304,6 +346,12 @@ async def handle_honeypot_trigger(message):
             guild_config = await get_guild_config(message.guild.id)
             ban_reason = guild_config.get("ban_reason") if guild_config else "Automatic ban: Suspected compromised account/bot"
             await log_ban_to_db(message.guild.id, message.author.id, str(message.author), ban_reason, indicators)
+        
+        # Delete the message last (after all logging and banning)
+        try:
+            await message.delete()
+        except discord.NotFound:
+            pass  # Message already deleted, that's fine
     except Exception as e:
         print(f"Error processing honeypot: {e}")
 
@@ -490,6 +538,10 @@ async def on_message(message):
             await message.channel.send("❌ You need administrator permissions.")
             return
         
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            await message.channel.send("❌ Database not configured. Contact bot owner to set SUPABASE_URL and SUPABASE_KEY.")
+            return
+        
         bans = await get_ban_history(message.guild.id)
         
         if not bans:
@@ -498,16 +550,25 @@ async def on_message(message):
         
         embed = discord.Embed(title="📋 Ban History", color=0xff0000, timestamp=datetime.now(timezone.utc))
         
-        for ban in bans:
-            ban_time = ban['banned_at'].replace('T', ' ').replace('Z', ' UTC') if 'T' in ban['banned_at'] else ban['banned_at']
-            embed.add_field(
-                name=f"User: {ban['banned_username']} (ID: {ban['banned_user_id']})",
-                value=f"**Reason:** {ban['ban_reason']}\n**Indicators:** {ban['indicators']}\n**Banned:** {ban_time}",
-                inline=False
-            )
-        
-        embed.set_footer(text="Last 10 bans")
-        await message.channel.send(embed=embed)
+        try:
+            for ban in bans:
+                ban_time = ban.get('banned_at', 'Unknown').replace('T', ' ').replace('Z', ' UTC') if 'banned_at' in ban and 'T' in ban['banned_at'] else ban.get('banned_at', 'Unknown')
+                username = ban.get('banned_username', 'Unknown User')
+                user_id = ban.get('banned_user_id', 'Unknown')
+                reason = ban.get('ban_reason', 'No reason')
+                indicators = ban.get('indicators', 'None detected')
+                
+                embed.add_field(
+                    name=f"User: {username} (ID: {user_id})",
+                    value=f"**Reason:** {reason}\n**Indicators:** {indicators}\n**Banned:** {ban_time}",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Last {len(bans)} ban(s)")
+            await message.channel.send(embed=embed)
+        except Exception as e:
+            await message.channel.send(f"❌ Error displaying ban history: {str(e)[:100]}")
+            print(f"Error in !banhistory command: {e}")
         return
 
 from keep_alive import keep_alive

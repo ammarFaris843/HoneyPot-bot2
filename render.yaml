@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: honeypot-bot
+    runtime: python
+    pythonVersion: 3.11
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd src && python bot.py
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        scope: build,runtime
+      - key: SUPABASE_URL
+        scope: build,runtime
+      - key: SUPABASE_KEY
+        scope: build,runtime

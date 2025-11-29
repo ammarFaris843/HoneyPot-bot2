@@ -216,7 +216,7 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="the honeypot 🪤")
+                                name="Gooning to Kotuh 💔")
     await client.change_presence(activity=activity)
 
     # Sync slash commands globally (fast & efficient)

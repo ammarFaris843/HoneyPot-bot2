@@ -3,6 +3,7 @@ from discord import app_commands
 import os
 import json
 import aiohttp
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 intents = discord.Intents.default()
@@ -19,6 +20,9 @@ BOT_OWNERS = {322362428883206145}
 # Supabase configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+
+# Render deployment URL for keep-alive pings
+RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL')
 
 # Caching
 GUILD_CONFIG_CACHE = {}
@@ -205,6 +209,27 @@ def get_log_channel(guild):
     return None  # Will be fetched when needed
 
 
+async def keep_alive_ping():
+    """Send periodic HTTPS requests to keep bot alive on Render"""
+    await client.wait_until_ready()
+    if not RENDER_EXTERNAL_URL:
+        print("⚠️ RENDER_EXTERNAL_URL not set, skipping keep-alive pings")
+        return
+    
+    while not client.is_closed():
+        try:
+            if session:
+                # Send HTTPS request every 20 minutes to prevent Render shutdown
+                async with session.get(RENDER_EXTERNAL_URL, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status in [200, 404]:
+                        print(f"🔄 Keep-alive ping sent to {RENDER_EXTERNAL_URL}")
+        except Exception as e:
+            print(f"⚠️ Keep-alive ping failed: {type(e).__name__}")
+        
+        # Wait 20 minutes before next ping
+        await asyncio.sleep(1200)
+
+
 @client.event
 async def on_ready():
     global session
@@ -216,8 +241,13 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="Gooning to Kotuh 💔")
+                                name="the honeypot 🪤")
     await client.change_presence(activity=activity)
+
+    # Start keep-alive background task (only once)
+    if not any(task.get_name() == 'keep_alive_ping' for task in asyncio.all_tasks()):
+        client.loop.create_task(keep_alive_ping(), name='keep_alive_ping')
+        print("✅ Keep-alive ping started (sends HTTPS request every 20 minutes)")
 
     # Sync slash commands globally (fast & efficient)
     try:
@@ -667,11 +697,16 @@ async def banhistory(interaction: discord.Interaction):
 
 
 from keep_alive import keep_alive
+import threading
 
 if __name__ == "__main__":
     import asyncio
     asyncio.run(init_db())
-    keep_alive()
+    
+    # Run Flask server in a background thread
+    flask_thread = threading.Thread(target=keep_alive, daemon=True)
+    flask_thread.start()
+    
     token = os.getenv('DISCORD_BOT_TOKEN')
     if token:
         print("Starting honeypot bot with Supabase database...")

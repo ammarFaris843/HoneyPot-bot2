@@ -241,7 +241,7 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="the honeypot 🪤")
+                                name="waffy literally the best mod")
     await client.change_presence(activity=activity)
 
     # Start keep-alive background task (only once)

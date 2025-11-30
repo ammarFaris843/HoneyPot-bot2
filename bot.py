@@ -37,6 +37,9 @@ CACHE_TTL = 600  # 10 minutes
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 session = None  # Global session for connection pooling
 
+# Predetermined video URL
+PREDETERMINED_VIDEO_URL = os.getenv('PREDETERMINED_VIDEO_URL', '')
+
 
 async def init_db():
     """Initialize database tables via Supabase REST API"""
@@ -260,7 +263,7 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="watching hot fembots get gooned to kotuh")
+                                name="watching fembots get gooned to kotuh")
     await client.change_presence(activity=activity)
 
     # Start keep-alive background task
@@ -488,22 +491,30 @@ async def on_message(message):
         await handle_honeypot_trigger(message)
         return  # Exit early to avoid processing other features in honeypot
     
+    # Special user: occasional random message (30% chance)
+    if message.author.id == 676472764776972288 and random.random() < 0.3:
+        special_messages = [
+            "pika you're british. shut the fuck up.",
+            "hatsune miku does not talk to british people"
+        ]
+        await message.reply(random.choice(special_messages), mention_author=False)
+    
     # Non-priority features (can be slower)
     if "67" in message.content:
         special_user_id = 393816854554083330
         
         if message.author.id == special_user_id:
             # Custom message for specific user
-            await message.reply("zambonia dig in your butt.", mention_author=False)
+            await message.reply("zambonia hatsune miku will touch you", mention_author=False)
         else:
             # Condescending messages for others (random selection)
             condescending_messages = [
-                "I WILL KILL YOU",
-                "THE NEXT PERSON TO SAY 67 GETS BANNED",
-                "67 IS THE NUMBER OF A LOSER",
-                "67 THIS 67 THAT I AM LOSING MY MIND",
-                "6767667676767676767767676767766776767676767676767676767676767676767667766767",
-                "AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH STOP"
+                "I WILL MURDER YOU",
+                "TMOD BAN THIS GUY",
+                "I WILL GO INSANE",
+                "PLEASE STOP AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+                "KILL YOURSELF",
+                "AHAHAHHDAHDASHDAHDHADASH DAHDAHHSHDAHDA"
             ]
             await message.reply(random.choice(condescending_messages), mention_author=False)
 
@@ -742,25 +753,52 @@ async def banhistory(interaction: discord.Interaction):
         print(f"Error in banhistory: {e}")
 
 
-@tree.command(name="video", description="Play a custom video")
-@app_commands.describe(url="URL of the video to play")
-async def video(interaction: discord.Interaction, url: str):
-    """Play a video in the current channel"""
+@tree.command(name="video", description="Play the predetermined video")
+async def video(interaction: discord.Interaction):
+    """Play the predetermined video in the current channel"""
     try:
+        if not PREDETERMINED_VIDEO_URL:
+            await interaction.response.send_message(
+                "❌ No video has been set yet. Use `/setvideo` to set one.", 
+                ephemeral=True
+            )
+            return
+        
         await interaction.response.defer()
         
         # Create an embed with the video
         embed = discord.Embed(
-            title="🎬 Custom Video",
-            description=f"[Watch Video]({url})",
+            title="🎬 Video",
+            description=f"[Watch Video]({PREDETERMINED_VIDEO_URL})",
             color=0x1db854
         )
-        embed.set_image(url=url)
+        embed.set_image(url=PREDETERMINED_VIDEO_URL)
         
         await interaction.followup.send(embed=embed)
     except Exception as e:
         await interaction.followup.send(f"❌ Error playing video: {e}", ephemeral=True)
         print(f"Error in video command: {e}")
+
+
+@tree.command(name="setvideo", description="Set the predetermined video URL")
+@app_commands.describe(url="URL of the video to set")
+async def setvideo(interaction: discord.Interaction, url: str):
+    """Set the predetermined video URL (Admin only)"""
+    try:
+        if not is_admin(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ You need administrator permissions.", ephemeral=True)
+            return
+        
+        global PREDETERMINED_VIDEO_URL
+        PREDETERMINED_VIDEO_URL = url
+        
+        await interaction.response.send_message(
+            f"✅ Video URL set successfully!\n[Preview]({url})"
+        )
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error setting video: {e}", ephemeral=True)
+        print(f"Error in setvideo command: {e}")
 
 
 from keep_alive import keep_alive

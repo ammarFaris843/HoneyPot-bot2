@@ -768,7 +768,7 @@ async def video(interaction: discord.Interaction):
         
         # Create an embed with the video
         embed = discord.Embed(
-            title="🎬 Video",
+            title="video i gooned to",
             description=f"[Watch Video]({PREDETERMINED_VIDEO_URL})",
             color=0x1db854
         )

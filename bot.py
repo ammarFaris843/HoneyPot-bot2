@@ -264,7 +264,7 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="watching fembots get gooned to kotuh 💔")
+                                name="the honeypot 🪤")
     await client.change_presence(activity=activity)
 
     # Start keep-alive background task
@@ -491,33 +491,6 @@ async def on_message(message):
         # Handle honeypot immediately, then let other checks run in background
         await handle_honeypot_trigger(message)
         return  # Exit early to avoid processing other features in honeypot
-    
-    # Special user: occasional random message (30% chance)
-    if message.author.id == 676472764776972288 and random.random() < 0.3:
-        special_messages = [
-            "pika youre british. shut the fuck up",
-            "this person known as pika is a ragebaitier"
-        ]
-        await message.reply(random.choice(special_messages), mention_author=False)
-    
-    # Non-priority features (can be slower)
-    if "67" in message.content:
-        special_user_id = 393816854554083330
-        
-        if message.author.id == special_user_id:
-            # Custom message for specific user
-            await message.reply("zam i will dig in your butt.", mention_author=False)
-        else:
-            # Condescending messages for others (random selection)
-            condescending_messages = [
-                "KILL ME NOW",
-                "67676767676776776767676767776767676767676766677667767676767676767676776766767676",
-                "TMOD BAN THIS GUY",
-                "guys what come after 67? 68? 😂",
-                "get it 67? HHAHAHAH because 6 and 7??? KILL YOURSELF",
-                "DIe"
-            ]
-            await message.reply(random.choice(condescending_messages), mention_author=False)
 
 
 # Slash Commands

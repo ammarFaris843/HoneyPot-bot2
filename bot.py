@@ -4,6 +4,7 @@ import os
 import json
 import aiohttp
 import asyncio
+import random
 from datetime import datetime, timedelta, timezone
 
 intents = discord.Intents.default()
@@ -21,8 +22,13 @@ BOT_OWNERS = {322362428883206145}
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
-# Render deployment URL for keep-alive pings
+# Deployment URLs for keep-alive pings
 RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL')
+REPLIT_WORKSPACE_URL = os.getenv('REPLIT_WORKSPACE_URL')
+
+# Fly.io deployment URL (auto-construct from app name)
+FLY_APP_NAME = os.getenv('FLY_APP_NAME')
+FLY_EXTERNAL_URL = f"https://{FLY_APP_NAME}.fly.dev" if FLY_APP_NAME else None
 
 # Caching
 GUILD_CONFIG_CACHE = {}
@@ -210,19 +216,32 @@ def get_log_channel(guild):
 
 
 async def keep_alive_ping():
-    """Send periodic HTTPS requests to keep bot alive on Render"""
+    """Send periodic HTTPS requests to keep bot alive on Render/Replit/Fly.io"""
     await client.wait_until_ready()
-    if not RENDER_EXTERNAL_URL:
-        print("⚠️ RENDER_EXTERNAL_URL not set, skipping keep-alive pings")
+    
+    # Determine which URL to use (priority order)
+    keep_alive_url = RENDER_EXTERNAL_URL or FLY_EXTERNAL_URL or REPLIT_WORKSPACE_URL
+    if not keep_alive_url:
+        print("⚠️ No deployment URL set, skipping keep-alive pings")
         return
+    
+    # Detect deployment platform
+    if RENDER_EXTERNAL_URL:
+        deployment = "Render"
+    elif FLY_EXTERNAL_URL:
+        deployment = "Fly.io"
+    else:
+        deployment = "Replit"
+    
+    print(f"✅ Keep-alive pings enabled for {deployment} ({keep_alive_url})")
     
     while not client.is_closed():
         try:
             if session:
-                # Send HTTPS request every 20 minutes to prevent Render shutdown
-                async with session.get(RENDER_EXTERNAL_URL, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                # Send HTTPS request every 20 minutes to prevent shutdown
+                async with session.get(keep_alive_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     if resp.status in [200, 404]:
-                        print(f"🔄 Keep-alive ping sent to {RENDER_EXTERNAL_URL}")
+                        print(f"🔄 Keep-alive ping sent to {deployment}")
         except Exception as e:
             print(f"⚠️ Keep-alive ping failed: {type(e).__name__}")
         
@@ -241,13 +260,12 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="waffy literally the best mod")
+                                name="watching hot fembots get gooned to kotuh")
     await client.change_presence(activity=activity)
 
-    # Start keep-alive background task (only once)
-    if not any(task.get_name() == 'keep_alive_ping' for task in asyncio.all_tasks()):
-        client.loop.create_task(keep_alive_ping(), name='keep_alive_ping')
-        print("✅ Keep-alive ping started (sends HTTPS request every 20 minutes)")
+    # Start keep-alive background task
+    client.loop.create_task(keep_alive_ping())
+    print("✅ Keep-alive ping started (sends HTTPS request every 20 minutes)")
 
     # Sync slash commands globally (fast & efficient)
     try:
@@ -407,36 +425,42 @@ async def handle_honeypot_trigger(message):
         member = message.guild.get_member(message.author.id)
         if not member:
             return
+        
+        # Fast path: detect indicators and ban immediately
         indicators = await detect_suspicious_indicators(message.author, member)
-        print(
-            f"Honeypot triggered by {message.author} (ID: {message.author.id})"
-        )
-        print(f"Message: {message.content}")
-        print(f"Indicators: {indicators}")
-
-        # Log detection first (before deletion)
-        await log_detection(message.guild, message.author, message.content,
-                            indicators)
-
-        # Ban the user
+        print(f"🎯 Honeypot triggered - banning {message.author} (ID: {message.author.id})")
+        
+        # Ban user immediately (priority operation)
         ban_success = await ban_user(member, indicators, message.guild)
-        await log_ban_result(message.guild, message.author, ban_success,
-                             indicators)
-
-        # Log ban to database
+        
+        # Delete message immediately (priority operation)
+        try:
+            await message.delete()
+        except discord.NotFound:
+            pass
+        
+        # Run all logging operations in parallel (non-blocking)
         if ban_success:
             guild_config = await get_guild_config(message.guild.id)
             ban_reason = guild_config.get(
                 "ban_reason"
             ) if guild_config else "Automatic ban: Suspected compromised account/bot"
-            await log_ban_to_db(message.guild.id, message.author.id,
-                                str(message.author), ban_reason, indicators)
-
-        # Delete the message last (after all logging and banning)
-        try:
-            await message.delete()
-        except discord.NotFound:
-            pass  # Message already deleted, that's fine
+            
+            # Run logging in parallel to speed up ban process
+            await asyncio.gather(
+                log_detection(message.guild, message.author, message.content, indicators),
+                log_ban_result(message.guild, message.author, ban_success, indicators),
+                log_ban_to_db(message.guild.id, message.author.id, str(message.author), ban_reason, indicators),
+                return_exceptions=True  # Don't stop if one fails
+            )
+        else:
+            # Still log if ban failed
+            await asyncio.gather(
+                log_detection(message.guild, message.author, message.content, indicators),
+                log_ban_result(message.guild, message.author, ban_success, indicators),
+                return_exceptions=True
+            )
+            
     except Exception as e:
         print(f"Error processing honeypot: {e}")
 
@@ -454,12 +478,34 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # Check honeypot FIRST (priority)
     guild_config = await get_guild_config(message.guild.id)
     honeypot_id = guild_config.get(
         "honeypot_channel_id") if guild_config else None
 
     if honeypot_id and message.channel.id == honeypot_id:
+        # Handle honeypot immediately, then let other checks run in background
         await handle_honeypot_trigger(message)
+        return  # Exit early to avoid processing other features in honeypot
+    
+    # Non-priority features (can be slower)
+    if "67" in message.content:
+        special_user_id = 393816854554083330
+        
+        if message.author.id == special_user_id:
+            # Custom message for specific user
+            await message.reply("zambonia dig in your butt.", mention_author=False)
+        else:
+            # Condescending messages for others (random selection)
+            condescending_messages = [
+                "I WILL KILL YOU",
+                "THE NEXT PERSON TO SAY 67 GETS BANNED",
+                "67 IS THE NUMBER OF A LOSER",
+                "67 THIS 67 THAT I AM LOSING MY MIND",
+                "6767667676767676767767676767766776767676767676767676767676767676767667766767",
+                "AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH STOP"
+            ]
+            await message.reply(random.choice(condescending_messages), mention_author=False)
 
 
 # Slash Commands
@@ -694,6 +740,27 @@ async def banhistory(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"❌ Error displaying ban history")
         print(f"Error in banhistory: {e}")
+
+
+@tree.command(name="video", description="Play a custom video")
+@app_commands.describe(url="URL of the video to play")
+async def video(interaction: discord.Interaction, url: str):
+    """Play a video in the current channel"""
+    try:
+        await interaction.response.defer()
+        
+        # Create an embed with the video
+        embed = discord.Embed(
+            title="🎬 Custom Video",
+            description=f"[Watch Video]({url})",
+            color=0x1db854
+        )
+        embed.set_image(url=url)
+        
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error playing video: {e}", ephemeral=True)
+        print(f"Error in video command: {e}")
 
 
 from keep_alive import keep_alive

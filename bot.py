@@ -37,8 +37,6 @@ CACHE_TTL = 600  # 10 minutes
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 session = None  # Global session for connection pooling
 
-# Predetermined video URL
-PREDETERMINED_VIDEO_URL = os.getenv('PREDETERMINED_VIDEO_URL', '')
 
 
 async def init_db():
@@ -121,7 +119,7 @@ async def get_guild_config(guild_id):
         return None
 
 
-async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id):
+async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id, video_url=None):
     """Save configuration for a specific guild"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return False
@@ -140,6 +138,9 @@ async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id):
             'log_channel_id': log_channel_id,
             'ban_reason': 'Automatic ban: Suspected compromised account/bot'
         }
+        
+        if video_url is not None:
+            data['video_url'] = video_url
 
         url = f"{SUPABASE_URL}/rest/v1/guild_configs"
         async with session.post(url, json=data, headers=headers, timeout=HTTP_TIMEOUT) as resp:
@@ -263,7 +264,7 @@ async def on_ready():
 
     print(f'{client.user} is now online!')
     activity = discord.Activity(type=discord.ActivityType.watching,
-                                name="watching fembots get gooned to kotuh")
+                                name="watching fembots get gooned to kotuh 💔")
     await client.change_presence(activity=activity)
 
     # Start keep-alive background task
@@ -494,8 +495,8 @@ async def on_message(message):
     # Special user: occasional random message (30% chance)
     if message.author.id == 676472764776972288 and random.random() < 0.3:
         special_messages = [
-            "pika you're british. shut the fuck up.",
-            "hatsune miku does not talk to british people"
+            "pika youre british. shut the fuck up",
+            "this person known as pika is a ragebaitier"
         ]
         await message.reply(random.choice(special_messages), mention_author=False)
     
@@ -505,16 +506,16 @@ async def on_message(message):
         
         if message.author.id == special_user_id:
             # Custom message for specific user
-            await message.reply("zambonia hatsune miku will touch you", mention_author=False)
+            await message.reply("zam i will dig in your butt.", mention_author=False)
         else:
             # Condescending messages for others (random selection)
             condescending_messages = [
-                "I WILL MURDER YOU",
+                "KILL ME NOW",
+                "67676767676776776767676767776767676767676766677667767676767676767676776766767676",
                 "TMOD BAN THIS GUY",
-                "I WILL GO INSANE",
-                "PLEASE STOP AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
-                "KILL YOURSELF",
-                "AHAHAHHDAHDASHDAHDHADASH DAHDAHHSHDAHDA"
+                "guys what come after 67? 68? 😂",
+                "get it 67? HHAHAHAH because 6 and 7??? KILL YOURSELF",
+                "DIe"
             ]
             await message.reply(random.choice(condescending_messages), mention_author=False)
 
@@ -753,49 +754,61 @@ async def banhistory(interaction: discord.Interaction):
         print(f"Error in banhistory: {e}")
 
 
-@tree.command(name="video", description="Play the predetermined video")
+@tree.command(name="video", description="Play the server's predetermined video")
 async def video(interaction: discord.Interaction):
-    """Play the predetermined video in the current channel"""
+    """Play the video for this server"""
     try:
-        if not PREDETERMINED_VIDEO_URL:
+        guild_config = await get_guild_config(interaction.guild.id)
+        video_url = guild_config.get("video_url") if guild_config else None
+        
+        if not video_url or video_url.strip() == '':
             await interaction.response.send_message(
-                "❌ No video has been set yet. Use `/setvideo` to set one.", 
+                "❌ No video has been set yet. Use `/setvideo <url>` to set one.", 
                 ephemeral=True
             )
             return
         
-        await interaction.response.defer()
-        
-        # Create an embed with the video
+        # Create an embed with the video link
         embed = discord.Embed(
-            title="video i gooned to",
-            description=f"[Watch Video]({PREDETERMINED_VIDEO_URL})",
+            title="🎬 Video",
+            description=f"[Click here to watch]({video_url})",
             color=0x1db854
         )
-        embed.set_image(url=PREDETERMINED_VIDEO_URL)
         
-        await interaction.followup.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
     except Exception as e:
-        await interaction.followup.send(f"❌ Error playing video: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
         print(f"Error in video command: {e}")
 
 
-@tree.command(name="setvideo", description="Set the predetermined video URL")
+@tree.command(name="setvideo", description="Set the video URL for this server")
 @app_commands.describe(url="URL of the video to set")
 async def setvideo(interaction: discord.Interaction, url: str):
-    """Set the predetermined video URL (Admin only)"""
+    """Set the video URL for this server (Admin only)"""
     try:
         if not is_admin(interaction.user, interaction.guild):
             await interaction.response.send_message(
                 "❌ You need administrator permissions.", ephemeral=True)
             return
         
-        global PREDETERMINED_VIDEO_URL
-        PREDETERMINED_VIDEO_URL = url
+        if not url or url.strip() == '':
+            await interaction.response.send_message(
+                "❌ URL cannot be empty.", ephemeral=True)
+            return
         
-        await interaction.response.send_message(
-            f"✅ Video URL set successfully!\n[Preview]({url})"
-        )
+        video_url = url.strip()
+        guild_config = await get_guild_config(interaction.guild.id)
+        honeypot_id = guild_config.get("honeypot_channel_id") if guild_config else None
+        log_id = guild_config.get("log_channel_id") if guild_config else None
+        
+        if await save_guild_config(interaction.guild.id, honeypot_id, log_id, video_url):
+            print(f"✅ Video URL updated for guild {interaction.guild.id}: {video_url}")
+            await interaction.response.send_message(
+                f"✅ Video URL saved!\nURL: `{video_url}`"
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to save video URL to database.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Error setting video: {e}", ephemeral=True)
         print(f"Error in setvideo command: {e}")

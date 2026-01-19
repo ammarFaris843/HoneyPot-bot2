@@ -758,21 +758,24 @@ async def unban(interaction: discord.Interaction, user_id: str):
         await interaction.followup.send(f"An error occurred: {e}")
 
 
-@tree.command(name="accountreview", description="Instructions on how to request an Account Review")
+@tree.command(
+    name="accountreview",
+    description="Account Review request instructions."
+)
 @app_commands.checks.cooldown(1, 60.0, key=lambda i: (i.guild_id, i.user.id))
 async def accountreview(interaction: discord.Interaction):
     """Instructions on how to request an account review."""
     embed = discord.Embed(
-        title="Kotuh Server's Account Review Guide",
+        title="HSR Account Review Guide",
         description=(
-            "**Welcome Gooners!**\n\n"
-            "To request an account review, please complete the following steps:\n\n"
-            "1. Obtain the **Account Review Queue** role by reacting in the **Roles Channel**.\n"
-            "2. Read the pinned messages in **Minor Announcements** for queue instructions.\n\n"
+            "**Welcome!**\n\n"
+            "To request an account review:\n\n"
+            "1. Get the **Account Review Queue** role from the **Roles Channel**.\n"
+            "2. Read the pinned messages in **Minor Announcements**.\n"
             "3. Post your builds in the designated channels (**resets weekly**).\n\n"
-            "Accounts are selected based on **community votes** to ensure each review is unique and suitable for content creation.\n\n"
-            "**Note:** Reviews take time. Please be patient while Kotuh evaluates your account. We look forward to seeing your builds."
-            "-# Kotuh is stupid , don't expect a concise and well articulated account review. He doesn't even know what hes doing."
+            "Accounts are selected by **community vote** to keep reviews unique.\n\n"
+            "**Note:** Reviews take time—please be patient.\n\n"
+            "-# Kotuh is stupid. Do not expect a concise or well-articulated review."
         ),
         color=0x00FFCC
     )

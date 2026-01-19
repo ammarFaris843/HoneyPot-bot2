@@ -780,7 +780,6 @@ async def accountreview(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-
 @accountreview.error
 async def accountreview_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CommandOnCooldown):

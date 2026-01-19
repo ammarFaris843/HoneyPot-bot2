@@ -805,29 +805,34 @@ async def accountreview_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError
 ):
-    if interaction.response.is_done():
+    try:
         if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.followup.send(
-                f"Try again in {error.retry_after:.1f}s.",
-                ephemeral=True
-            )
+            msg = f"Try again in {error.retry_after:.1f}s."
         else:
-            await interaction.followup.send(
-                "An unexpected error occurred.",
-                ephemeral=True
-            )
-        return
+            msg = "An unexpected error occurred."
+            print(f"Error in accountreview: {error}") 
 
-    if isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(
-            f"Try again in {error.retry_after:.1f}s.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            "An unexpected error occurred.",
-            ephemeral=True
-        )
+
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+
+    except discord.InteractionResponded:
+        try:
+            await interaction.followup.send(msg, ephemeral=True)
+        except Exception:
+            pass
+    except discord.HTTPException as e:
+        if e.code == 40060: 
+            try:
+                await interaction.followup.send(msg, ephemeral=True)
+            except Exception:
+                pass
+    except discord.NotFound:
+        pass
+    except Exception as e:
+        print(f"Error in accountreview_error handler: {e}")
 
 
 

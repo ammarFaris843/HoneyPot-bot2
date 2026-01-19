@@ -33,9 +33,9 @@ FLY_EXTERNAL_URL = f"https://{FLY_APP_NAME}.fly.dev" if FLY_APP_NAME else None
 # Caching
 GUILD_CONFIG_CACHE = {}
 BAN_HISTORY_CACHE = {}
-CACHE_TTL = 600  # 10 minutes
+CACHE_TTL = 600  
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
-session = None  # Global session for connection pooling
+session = None  
 
 
 
@@ -47,7 +47,6 @@ async def init_db():
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Test connection
             headers = {
                 'apikey': SUPABASE_KEY,
                 'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -802,17 +801,34 @@ async def accountreview(interaction: discord.Interaction):
 
 
 @accountreview.error
-async def accountreview_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+async def accountreview_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+    if interaction.response.is_done():
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.followup.send(
+                f"Try again in {error.retry_after:.1f}s.",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                "An unexpected error occurred.",
+                ephemeral=True
+            )
+        return
+
     if isinstance(error, app_commands.CommandOnCooldown):
         await interaction.response.send_message(
-            f"This command is on cooldown. Try again in {error.retry_after:.1f}s.",
+            f"Try again in {error.retry_after:.1f}s.",
             ephemeral=True
         )
     else:
         await interaction.response.send_message(
-            "An error occurred while processing the command.",
+            "An unexpected error occurred.",
             ephemeral=True
         )
+
 
 
 from keep_alive import keep_alive

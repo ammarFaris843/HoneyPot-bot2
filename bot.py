@@ -809,7 +809,7 @@ async def accountreview_error(
         if isinstance(error, app_commands.CommandOnCooldown):
             msg = f"Try again in {error.retry_after:.1f}s."
         else:
-            msg = "An unexpected error occurred."
+            msg = f"An unexpected error occurred: {error}"
             print(f"Error in accountreview: {error}") 
 
 

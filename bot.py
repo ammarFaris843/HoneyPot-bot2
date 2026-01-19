@@ -42,7 +42,7 @@ session = None  # Global session for connection pooling
 async def init_db():
     """Initialize database tables via Supabase REST API"""
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("⚠️ Supabase credentials not set. Database features disabled.")
+        print("Supabase credentials not set. Database features disabled.")
         return False
 
     try:
@@ -58,25 +58,25 @@ async def init_db():
             url = f"{SUPABASE_URL}/rest/v1/guild_configs?limit=1"
             async with session.get(url, headers=headers) as resp:
                 if resp.status in [200, 404]:
-                    print("✅ Database initialized successfully")
+                    print("Database initialized successfully")
                     return True
                 elif resp.status == 401:
                     print(
-                        "⚠️ Database error: Invalid Supabase credentials (401 Unauthorized)"
+                        "Database error: Invalid Supabase credentials (401 Unauthorized)"
                     )
                     return False
                 else:
                     text = await resp.text()
-                    print(f"⚠️ Database error ({resp.status}): {text[:150]}")
+                    print(f"Database error ({resp.status}): {text[:150]}")
                     return False
     except Exception as e:
         error_type = type(e).__name__
         if 'Connection' in error_type:
-            print(f"⚠️ Cannot reach Supabase - check SUPABASE_URL is correct")
+            print(f"Cannot reach Supabase - check SUPABASE_URL is correct")
         elif 'Timeout' in error_type:
-            print(f"⚠️ Supabase connection timeout - server may be slow")
+            print(f"Supabase connection timeout - server may be slow")
         else:
-            print(f"⚠️ Database connection error: {error_type}")
+            print(f"Database connection error: {error_type}")
         return False
 
 
@@ -119,7 +119,7 @@ async def get_guild_config(guild_id):
         return None
 
 
-async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id, video_url=None):
+async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id):
     """Save configuration for a specific guild"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return False
@@ -138,9 +138,6 @@ async def save_guild_config(guild_id, honeypot_channel_id, log_channel_id, video
             'log_channel_id': log_channel_id,
             'ban_reason': 'Automatic ban: Suspected compromised account/bot'
         }
-        
-        if video_url is not None:
-            data['video_url'] = video_url
 
         url = f"{SUPABASE_URL}/rest/v1/guild_configs"
         async with session.post(url, json=data, headers=headers, timeout=HTTP_TIMEOUT) as resp:
@@ -170,7 +167,8 @@ async def log_ban_to_db(guild_id, user_id, username, ban_reason, indicators):
             'banned_user_id': user_id,
             'banned_username': username,
             'ban_reason': ban_reason,
-            'indicators': indicators_str
+            'indicators': indicators_str,
+            'banned_at': datetime.now(timezone.utc).isoformat()
         }
 
         url = f"{SUPABASE_URL}/rest/v1/ban_history"
@@ -226,7 +224,7 @@ async def keep_alive_ping():
     # Determine which URL to use (priority order)
     keep_alive_url = RENDER_EXTERNAL_URL or FLY_EXTERNAL_URL or REPLIT_WORKSPACE_URL
     if not keep_alive_url:
-        print("⚠️ No deployment URL set, skipping keep-alive pings")
+        print("No deployment URL set, skipping keep-alive pings")
         return
     
     # Detect deployment platform
@@ -237,7 +235,7 @@ async def keep_alive_ping():
     else:
         deployment = "Replit"
     
-    print(f"✅ Keep-alive pings enabled for {deployment} ({keep_alive_url})")
+    print(f"Keep-alive pings enabled for {deployment} ({keep_alive_url})")
     
     while not client.is_closed():
         try:
@@ -245,9 +243,9 @@ async def keep_alive_ping():
                 # Send HTTPS request every 20 minutes to prevent shutdown
                 async with session.get(keep_alive_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     if resp.status in [200, 404]:
-                        print(f"🔄 Keep-alive ping sent to {deployment}")
+                        print(f"Keep-alive ping sent to {deployment}")
         except Exception as e:
-            print(f"⚠️ Keep-alive ping failed: {type(e).__name__}")
+            print(f"Keep-alive ping failed: {type(e).__name__}")
         
         # Wait 20 minutes before next ping
         await asyncio.sleep(1200)
@@ -269,14 +267,14 @@ async def on_ready():
 
     # Start keep-alive background task
     client.loop.create_task(keep_alive_ping())
-    print("✅ Keep-alive ping started (sends HTTPS request every 20 minutes)")
+    print("Keep-alive ping started (sends HTTPS request every 20 minutes)")
 
     # Sync slash commands globally (fast & efficient)
     try:
         synced = await tree.sync()
-        print(f"✅ Synced {len(synced)} command(s) globally")
+        print("Synced 8 command(s) globally")
     except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
+        print(f"Failed to sync commands: {e}")
 
     for guild in client.guilds:
         guild_config = await get_guild_config(guild.id)
@@ -284,7 +282,7 @@ async def on_ready():
             "honeypot_channel_id") if guild_config else None
         log_id = guild_config.get("log_channel_id") if guild_config else None
 
-        status = "✅" if honeypot_id and log_id else "⚠️"
+        status = "OK" if honeypot_id and log_id else "WARN"
         print(
             f"{status} {guild.name} (ID: {guild.id}) - Honeypot: {honeypot_id}, Log: {log_id}"
         )
@@ -399,7 +397,7 @@ async def log_ban_result(guild, user, success, indicators):
 
     try:
         color = 0x00ff00 if success else 0xff0000
-        title = "✅ User Banned" if success else "❌ Ban Failed"
+        title = "User Banned" if success else "Ban Failed"
         embed = discord.Embed(title=title,
                               color=color,
                               timestamp=datetime.now(timezone.utc))
@@ -430,40 +428,33 @@ async def handle_honeypot_trigger(message):
         if not member:
             return
         
-        # Fast path: detect indicators and ban immediately
         indicators = await detect_suspicious_indicators(message.author, member)
-        print(f"🎯 Honeypot triggered - banning {message.author} (ID: {message.author.id})")
         
-        # Ban user immediately (priority operation)
         ban_success = await ban_user(member, indicators, message.guild)
         
-        # Delete message immediately (priority operation)
         try:
             await message.delete()
         except discord.NotFound:
             pass
         
-        # Run all logging operations in parallel (non-blocking)
         if ban_success:
             guild_config = await get_guild_config(message.guild.id)
             ban_reason = guild_config.get(
                 "ban_reason"
             ) if guild_config else "Automatic ban: Suspected compromised account/bot"
             
-            # Run logging in parallel to speed up ban process
-            await asyncio.gather(
+            asyncio.create_task(asyncio.gather(
                 log_detection(message.guild, message.author, message.content, indicators),
                 log_ban_result(message.guild, message.author, ban_success, indicators),
                 log_ban_to_db(message.guild.id, message.author.id, str(message.author), ban_reason, indicators),
-                return_exceptions=True  # Don't stop if one fails
-            )
+                return_exceptions=True
+            ))
         else:
-            # Still log if ban failed
-            await asyncio.gather(
+            asyncio.create_task(asyncio.gather(
                 log_detection(message.guild, message.author, message.content, indicators),
                 log_ban_result(message.guild, message.author, ban_success, indicators),
                 return_exceptions=True
-            )
+            ))
             
     except Exception as e:
         print(f"Error processing honeypot: {e}")
@@ -482,44 +473,41 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Check honeypot FIRST (priority)
     guild_config = await get_guild_config(message.guild.id)
     honeypot_id = guild_config.get(
         "honeypot_channel_id") if guild_config else None
 
     if honeypot_id and message.channel.id == honeypot_id:
-        # Handle honeypot immediately, then let other checks run in background
         await handle_honeypot_trigger(message)
-        return  # Exit early to avoid processing other features in honeypot
+        return 
 
 
-# Slash Commands
 @tree.command(name="sethoneypot",
               description="Set existing channel as honeypot")
 @app_commands.describe(channel_id="The channel ID to set as honeypot")
 async def sethoneypot(interaction: discord.Interaction, channel_id: str):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     try:
         ch_id = int(channel_id)
         channel = interaction.guild.get_channel(ch_id)
         if not channel:
-            await interaction.response.send_message("❌ Channel not found.",
+            await interaction.response.send_message("Channel not found.",
                                                     ephemeral=True)
             return
         guild_config = await get_guild_config(interaction.guild.id)
         log_id = guild_config.get("log_channel_id") if guild_config else None
         if await save_guild_config(interaction.guild.id, ch_id, log_id):
             await interaction.response.send_message(
-                f"✅ Honeypot channel set to {channel.mention}")
+                f"Honeypot channel set to {channel.mention}")
             GUILD_CONFIG_CACHE.pop(interaction.guild.id, None)
         else:
             await interaction.response.send_message(
-                "❌ Failed to save configuration.", ephemeral=True)
+                "Failed to save configuration.", ephemeral=True)
     except ValueError:
-        await interaction.response.send_message("❌ Invalid channel ID.",
+        await interaction.response.send_message("Invalid channel ID.",
                                                 ephemeral=True)
 
 
@@ -528,13 +516,13 @@ async def sethoneypot(interaction: discord.Interaction, channel_id: str):
 async def setlog(interaction: discord.Interaction, channel_id: str):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     try:
         ch_id = int(channel_id)
         channel = interaction.guild.get_channel(ch_id)
         if not channel:
-            await interaction.response.send_message("❌ Channel not found.",
+            await interaction.response.send_message("Channel not found.",
                                                     ephemeral=True)
             return
         guild_config = await get_guild_config(interaction.guild.id)
@@ -542,13 +530,13 @@ async def setlog(interaction: discord.Interaction, channel_id: str):
             "honeypot_channel_id") if guild_config else None
         if await save_guild_config(interaction.guild.id, honeypot_id, ch_id):
             await interaction.response.send_message(
-                f"✅ Log channel set to {channel.mention}")
+                f"Log channel set to {channel.mention}")
             GUILD_CONFIG_CACHE.pop(interaction.guild.id, None)
         else:
             await interaction.response.send_message(
-                "❌ Failed to save configuration.", ephemeral=True)
+                "Failed to save configuration.", ephemeral=True)
     except ValueError:
-        await interaction.response.send_message("❌ Invalid channel ID.",
+        await interaction.response.send_message("Invalid channel ID.",
                                                 ephemeral=True)
 
 
@@ -559,7 +547,7 @@ async def createhoneypot(interaction: discord.Interaction,
                          name: str = "🪤-honeypot"):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     try:
         await interaction.response.defer()
@@ -571,13 +559,13 @@ async def createhoneypot(interaction: discord.Interaction,
         log_id = guild_config.get("log_channel_id") if guild_config else None
         if await save_guild_config(interaction.guild.id, channel.id, log_id):
             await interaction.followup.send(
-                f"✅ Created honeypot channel: {channel.mention}\nChannel ID: `{channel.id}`"
+                f"Created honeypot channel: {channel.mention}\nChannel ID: `{channel.id}`"
             )
             GUILD_CONFIG_CACHE.pop(interaction.guild.id, None)
         else:
-            await interaction.followup.send("❌ Failed to save configuration.")
+            await interaction.followup.send("Failed to save configuration.")
     except Exception as e:
-        await interaction.followup.send(f"❌ Error creating channel: {e}")
+        await interaction.followup.send(f"Error creating channel: {e}")
 
 
 @tree.command(name="createlog", description="Create a new log channel")
@@ -586,7 +574,7 @@ async def createlog(interaction: discord.Interaction,
                     name: str = "🔍-honeypot-logs"):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     try:
         await interaction.response.defer()
@@ -600,13 +588,13 @@ async def createlog(interaction: discord.Interaction,
         if await save_guild_config(interaction.guild.id, honeypot_id,
                                    channel.id):
             await interaction.followup.send(
-                f"✅ Created log channel: {channel.mention}\nChannel ID: `{channel.id}`"
+                f"Created log channel: {channel.mention}\nChannel ID: `{channel.id}`"
             )
             GUILD_CONFIG_CACHE.pop(interaction.guild.id, None)
         else:
-            await interaction.followup.send("❌ Failed to save configuration.")
+            await interaction.followup.send("Failed to save configuration.")
     except Exception as e:
-        await interaction.followup.send(f"❌ Error creating channel: {e}")
+        await interaction.followup.send(f"Error creating channel: {e}")
 
 
 @tree.command(name="honeypotconfig",
@@ -614,7 +602,7 @@ async def createlog(interaction: discord.Interaction,
 async def honeypotconfig(interaction: discord.Interaction):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     guild_config = await get_guild_config(interaction.guild.id)
     honeypot_channel = None
@@ -649,7 +637,7 @@ async def honeypotconfig(interaction: discord.Interaction):
 async def honeypotstats(interaction: discord.Interaction):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     guild_config = await get_guild_config(interaction.guild.id)
     honeypot_channel = None
@@ -678,7 +666,7 @@ async def honeypotstats(interaction: discord.Interaction):
     embed.add_field(name="Members",
                     value=interaction.guild.member_count,
                     inline=True)
-    status = "✅ Active" if honeypot_channel and log_channel else "⚠️ Setup needed"
+    status = "Active" if honeypot_channel and log_channel else "Setup needed"
     embed.add_field(name="Status", value=status, inline=True)
     await interaction.response.send_message(embed=embed)
 
@@ -688,10 +676,10 @@ async def honeypotstats(interaction: discord.Interaction):
 async def banhistory(interaction: discord.Interaction):
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "❌ You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True)
         return
     if not SUPABASE_URL or not SUPABASE_KEY:
-        await interaction.response.send_message("❌ Database not configured.",
+        await interaction.response.send_message("Database not configured.",
                                                 ephemeral=True)
         return
     await interaction.response.defer()
@@ -723,68 +711,88 @@ async def banhistory(interaction: discord.Interaction):
         embed.set_footer(text=f"Last {len(bans)} ban(s)")
         await interaction.followup.send(embed=embed)
     except Exception as e:
-        await interaction.followup.send(f"❌ Error displaying ban history")
+        await interaction.followup.send(f"Error displaying ban history")
         print(f"Error in banhistory: {e}")
 
 
-@tree.command(name="video", description="Play the server's predetermined video")
-async def video(interaction: discord.Interaction):
-    """Play the video for this server"""
+@tree.command(name="unban", description="Unban a user across all servers using their ID")
+@app_commands.describe(user_id="The Discord ID of the user to unban")
+async def unban(interaction: discord.Interaction, user_id: str):
+    """Unban a user globally based on their ID"""
+    if not is_admin(interaction.user, interaction.guild):
+        await interaction.response.send_message(
+            "You need administrator permissions.", ephemeral=True)
+        return
+
     try:
-        guild_config = await get_guild_config(interaction.guild.id)
-        video_url = guild_config.get("video_url") if guild_config else None
+        u_id = int(user_id)
+        await interaction.response.defer()
         
-        if not video_url or video_url.strip() == '':
-            await interaction.response.send_message(
-                "❌ No video has been set yet. Use `/setvideo <url>` to set one.", 
-                ephemeral=True
-            )
+        success_guilds = []
+        fail_guilds = []
+
+        for guild in client.guilds:
+            try:
+                await guild.unban(discord.Object(id=u_id), reason=f"Unbanned by {interaction.user} via command")
+                success_guilds.append(f"{guild.name} ({guild.id})")
+            except discord.NotFound:
+                continue
+            except Exception as e:
+                fail_guilds.append(f"{guild.name}: {str(e)}")
+
+        if not success_guilds and not fail_guilds:
+            await interaction.followup.send(f"User {u_id} was not found in any server ban lists.")
             return
+
+        result_msg = ""
+        if success_guilds:
+            result_msg += f"Successfully unbanned in {len(success_guilds)} server(s).\n"
+        if fail_guilds:
+            result_msg += f"Failed to unban in {len(fail_guilds)} server(s): {', '.join(fail_guilds)}"
+            
+        await interaction.followup.send(result_msg)
         
-        # Create an embed with the video link
-        embed = discord.Embed(
-            title="🎬 Video",
-            description=f"[Click here to watch]({video_url})",
-            color=0x1db854
+    except ValueError:
+        await interaction.response.send_message("Invalid user ID. Please provide a numeric ID.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"An error occurred: {e}")
+
+
+@tree.command(name="accountreview", description="Instructions on how to request an Account Review")
+@app_commands.checks.cooldown(1, 60.0, key=lambda i: (i.guild_id, i.user.id))
+async def accountreview(interaction: discord.Interaction):
+    """Instructions on how to request an account review."""
+    embed = discord.Embed(
+        title="Kotuh Server's Account Review Guide",
+        description=(
+            "**Welcome Gooners!**\n\n"
+            "To request an account review, please complete the following steps:\n\n"
+            "1. Obtain the **Account Review Queue** role by reacting in the **Roles Channel**.\n"
+            "2. Read the pinned messages in **Minor Announcements** for queue instructions.\n\n"
+            "3. Post your builds in the designated channels (**resets weekly**).\n\n"
+            "Accounts are selected based on **community votes** to ensure each review is unique and suitable for content creation.\n\n"
+            "**Note:** Reviews take time. Please be patient while Kotuh evaluates your account. We look forward to seeing your builds."
+            "-# Kotuh is stupid , don't expect a concise and well articulated account review. He doesn't even know what hes doing."
+        ),
+        color=0x00FFCC
+    )
+    embed.set_footer(text="Kotuh is fuckin Bald!")
+    await interaction.response.send_message(embed=embed)
+
+
+
+@accountreview.error
+async def accountreview_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(
+            f"This command is on cooldown. Try again in {error.retry_after:.1f}s.",
+            ephemeral=True
         )
-        
-        await interaction.response.send_message(embed=embed)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
-        print(f"Error in video command: {e}")
-
-
-@tree.command(name="setvideo", description="Set the video URL for this server")
-@app_commands.describe(url="URL of the video to set")
-async def setvideo(interaction: discord.Interaction, url: str):
-    """Set the video URL for this server (Admin only)"""
-    try:
-        if not is_admin(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "❌ You need administrator permissions.", ephemeral=True)
-            return
-        
-        if not url or url.strip() == '':
-            await interaction.response.send_message(
-                "❌ URL cannot be empty.", ephemeral=True)
-            return
-        
-        video_url = url.strip()
-        guild_config = await get_guild_config(interaction.guild.id)
-        honeypot_id = guild_config.get("honeypot_channel_id") if guild_config else None
-        log_id = guild_config.get("log_channel_id") if guild_config else None
-        
-        if await save_guild_config(interaction.guild.id, honeypot_id, log_id, video_url):
-            print(f"✅ Video URL updated for guild {interaction.guild.id}: {video_url}")
-            await interaction.response.send_message(
-                f"✅ Video URL saved!\nURL: `{video_url}`"
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Failed to save video URL to database.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Error setting video: {e}", ephemeral=True)
-        print(f"Error in setvideo command: {e}")
+    else:
+        await interaction.response.send_message(
+            "An error occurred while processing the command.",
+            ephemeral=True
+        )
 
 
 from keep_alive import keep_alive
@@ -794,7 +802,6 @@ if __name__ == "__main__":
     import asyncio
     asyncio.run(init_db())
     
-    # Run Flask server in a background thread
     flask_thread = threading.Thread(target=keep_alive, daemon=True)
     flask_thread.start()
     

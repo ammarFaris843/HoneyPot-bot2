@@ -776,8 +776,6 @@ async def unban(interaction: discord.Interaction, user_id: str):
     name="accountreview",
     description="Account Review request instructions."
 )
-@app_commands.guild_only()
-@app_commands.checks.cooldown(1, 60.0, key=lambda i: i.user.id)
 async def accountreview(interaction: discord.Interaction):
     await interaction.response.defer(thinking=False)
 
@@ -799,22 +797,6 @@ async def accountreview(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-
-@tree.error
-async def on_app_command_error(
-    interaction: discord.Interaction,
-    error: app_commands.AppCommandError
-):
-    if isinstance(error, app_commands.CommandOnCooldown):
-        msg = f"Try again in {error.retry_after:.1f}s."
-    else:
-        msg = "An unexpected error occurred."
-        print(f"App command error: {error}")
-
-    try:
-        await interaction.followup.send(msg, ephemeral=True)
-    except discord.NotFound:
-        pass
 
 
 from keep_alive import keep_alive

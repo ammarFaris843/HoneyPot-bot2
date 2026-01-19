@@ -776,9 +776,10 @@ async def unban(interaction: discord.Interaction, user_id: str):
     name="accountreview",
     description="Account Review request instructions."
 )
-@app_commands.checks.cooldown(1, 60.0, key=lambda i: (i.guild_id, i.user.id))
+@app_commands.guild_only()
+@app_commands.checks.cooldown(1, 60.0, key=lambda i: i.user.id)
 async def accountreview(interaction: discord.Interaction):
-    await interaction.response.defer() 
+    await interaction.response.defer(thinking=False)
 
     embed = discord.Embed(
         title="Kotuh's Account Review Guide",
@@ -799,41 +800,21 @@ async def accountreview(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 
-
-@accountreview.error
-async def accountreview_error(
+@tree.error
+async def on_app_command_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError
 ):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        msg = f"Try again in {error.retry_after:.1f}s."
+    else:
+        msg = "An unexpected error occurred."
+        print(f"App command error: {error}")
+
     try:
-        if isinstance(error, app_commands.CommandOnCooldown):
-            msg = f"Try again in {error.retry_after:.1f}s."
-        else:
-            msg = f"An unexpected error occurred: {error}"
-            print(f"Error in accountreview: {error}") 
-
-
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
-
-    except discord.InteractionResponded:
-        try:
-            await interaction.followup.send(msg, ephemeral=True)
-        except Exception:
-            pass
-    except discord.HTTPException as e:
-        if e.code == 40060: 
-            try:
-                await interaction.followup.send(msg, ephemeral=True)
-            except Exception:
-                pass
+        await interaction.followup.send(msg, ephemeral=True)
     except discord.NotFound:
         pass
-    except Exception as e:
-        print(f"Error in accountreview_error handler: {e}")
-
 
 
 from keep_alive import keep_alive

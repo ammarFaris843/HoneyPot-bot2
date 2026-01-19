@@ -718,44 +718,59 @@ async def banhistory(interaction: discord.Interaction):
 @tree.command(name="unban", description="Unban a user across all servers using their ID")
 @app_commands.describe(user_id="The Discord ID of the user to unban")
 async def unban(interaction: discord.Interaction, user_id: str):
-    """Unban a user globally based on their ID"""
     if not is_admin(interaction.user, interaction.guild):
         await interaction.response.send_message(
-            "You need administrator permissions.", ephemeral=True)
+            "You need administrator permissions.", ephemeral=True
+        )
         return
 
     try:
         u_id = int(user_id)
-        await interaction.response.defer()
-
-        success_guilds = []
-        fail_guilds = []
-
-        for guild in client.guilds:
-            try:
-                await guild.unban(discord.Object(id=u_id), reason=f"Unbanned by {interaction.user} via command")
-                success_guilds.append(f"{guild.name} ({guild.id})")
-            except discord.NotFound:
-                continue
-            except Exception as e:
-                fail_guilds.append(f"{guild.name}: {str(e)}")
-
-        if not success_guilds and not fail_guilds:
-            await interaction.followup.send(f"User {u_id} was not found in any server ban lists.")
-            return
-
-        result_msg = ""
-        if success_guilds:
-            result_msg += f"Successfully unbanned in {len(success_guilds)} server(s).\n"
-        if fail_guilds:
-            result_msg += f"Failed to unban in {len(fail_guilds)} server(s): {', '.join(fail_guilds)}"
-
-        await interaction.followup.send(result_msg)
-
     except ValueError:
-        await interaction.response.send_message("Invalid user ID. Please provide a numeric ID.", ephemeral=True)
-    except Exception as e:
-        await interaction.followup.send(f"An error occurred: {e}")
+        await interaction.response.send_message(
+            "Invalid user ID. Please provide a numeric ID.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer() 
+
+    success_guilds = []
+    fail_guilds = []
+
+    for guild in client.guilds:
+        try:
+            await guild.unban(
+                discord.Object(id=u_id),
+                reason=f"Unbanned by {interaction.user} via command"
+            )
+            success_guilds.append(guild.name)
+        except discord.NotFound:
+            continue
+        except Exception as e:
+            fail_guilds.append(f"{guild.name}: {type(e).__name__}")
+
+    if not success_guilds and not fail_guilds:
+        await interaction.followup.send(
+            f"User `{u_id}` was not found in any server ban lists."
+        )
+        return
+
+    lines = []
+
+    if success_guilds:
+        lines.append(
+            f"**Unbanned in {len(success_guilds)} server(s):**\n" +
+            "\n".join(f"• {g}" for g in success_guilds)
+        )
+
+    if fail_guilds:
+        lines.append(
+            f"**Failed in {len(fail_guilds)} server(s):**\n" +
+            "\n".join(f"• {g}" for g in fail_guilds)
+        )
+
+    await interaction.followup.send("\n\n".join(lines))
+
 
 
 @tree.command(
@@ -764,23 +779,26 @@ async def unban(interaction: discord.Interaction, user_id: str):
 )
 @app_commands.checks.cooldown(1, 60.0, key=lambda i: (i.guild_id, i.user.id))
 async def accountreview(interaction: discord.Interaction):
-    """Instructions on how to request an account review."""
+    await interaction.response.defer() 
+
     embed = discord.Embed(
-        title="HSR Account Review Guide",
+        title="Kotuh's Account Review Guide",
         description=(
             "**Welcome!**\n\n"
             "To request an account review:\n\n"
             "1. Get the **Account Review Queue** role from the **Roles Channel**.\n"
-            "2. Read the pinned messages in **Minor Announcements**.\n"
-            "3. Post your builds in the designated channels (**resets weekly**).\n\n"
-            "Accounts are selected by **community vote** to keep reviews unique.\n\n"
+            "2. Read the pinned messages in **Minor Announcements** for further instructions.\n"
+            "3. Post your builds in the designated channels (**Resets Weekly**).\n\n"
             "**Note:** Reviews take time—please be patient.\n\n"
+            "-# Accounts are selected by **community vote** to keep reviews unique.\n\n"
             "-# Kotuh is stupid. Do not expect a concise or well-articulated review."
         ),
         color=0x00FFCC
     )
     embed.set_footer(text="Kotuh is fuckin Bald!")
-    await interaction.response.send_message(embed=embed)
+
+    await interaction.followup.send(embed=embed)
+
 
 
 @accountreview.error

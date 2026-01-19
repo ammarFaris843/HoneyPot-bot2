@@ -184,7 +184,7 @@ async def get_ban_history(guild_id):
     """Get ban history for a guild (with caching)"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return []
-    
+
     # Check cache first
     if guild_id in BAN_HISTORY_CACHE:
         cached_data, timestamp = BAN_HISTORY_CACHE[guild_id]
@@ -220,13 +220,13 @@ def get_log_channel(guild):
 async def keep_alive_ping():
     """Send periodic HTTPS requests to keep bot alive on Render/Replit/Fly.io"""
     await client.wait_until_ready()
-    
+
     # Determine which URL to use (priority order)
     keep_alive_url = RENDER_EXTERNAL_URL or FLY_EXTERNAL_URL or REPLIT_WORKSPACE_URL
     if not keep_alive_url:
         print("No deployment URL set, skipping keep-alive pings")
         return
-    
+
     # Detect deployment platform
     if RENDER_EXTERNAL_URL:
         deployment = "Render"
@@ -234,9 +234,9 @@ async def keep_alive_ping():
         deployment = "Fly.io"
     else:
         deployment = "Replit"
-    
+
     print(f"Keep-alive pings enabled for {deployment} ({keep_alive_url})")
-    
+
     while not client.is_closed():
         try:
             if session:
@@ -246,7 +246,7 @@ async def keep_alive_ping():
                         print(f"Keep-alive ping sent to {deployment}")
         except Exception as e:
             print(f"Keep-alive ping failed: {type(e).__name__}")
-        
+
         # Wait 20 minutes before next ping
         await asyncio.sleep(1200)
 
@@ -427,22 +427,22 @@ async def handle_honeypot_trigger(message):
         member = message.guild.get_member(message.author.id)
         if not member:
             return
-        
+
         indicators = await detect_suspicious_indicators(message.author, member)
-        
+
         ban_success = await ban_user(member, indicators, message.guild)
-        
+
         try:
             await message.delete()
         except discord.NotFound:
             pass
-        
+
         if ban_success:
             guild_config = await get_guild_config(message.guild.id)
             ban_reason = guild_config.get(
                 "ban_reason"
             ) if guild_config else "Automatic ban: Suspected compromised account/bot"
-            
+
             asyncio.create_task(asyncio.gather(
                 log_detection(message.guild, message.author, message.content, indicators),
                 log_ban_result(message.guild, message.author, ban_success, indicators),
@@ -455,7 +455,7 @@ async def handle_honeypot_trigger(message):
                 log_ban_result(message.guild, message.author, ban_success, indicators),
                 return_exceptions=True
             ))
-            
+
     except Exception as e:
         print(f"Error processing honeypot: {e}")
 
@@ -727,7 +727,7 @@ async def unban(interaction: discord.Interaction, user_id: str):
     try:
         u_id = int(user_id)
         await interaction.response.defer()
-        
+
         success_guilds = []
         fail_guilds = []
 
@@ -749,9 +749,9 @@ async def unban(interaction: discord.Interaction, user_id: str):
             result_msg += f"Successfully unbanned in {len(success_guilds)} server(s).\n"
         if fail_guilds:
             result_msg += f"Failed to unban in {len(fail_guilds)} server(s): {', '.join(fail_guilds)}"
-            
+
         await interaction.followup.send(result_msg)
-        
+
     except ValueError:
         await interaction.response.send_message("Invalid user ID. Please provide a numeric ID.", ephemeral=True)
     except Exception as e:
@@ -800,10 +800,10 @@ import threading
 if __name__ == "__main__":
     import asyncio
     asyncio.run(init_db())
-    
+
     flask_thread = threading.Thread(target=keep_alive, daemon=True)
     flask_thread.start()
-    
+
     token = os.getenv('DISCORD_BOT_TOKEN')
     if token:
         print("Starting honeypot bot with Supabase database...")

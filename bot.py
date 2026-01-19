@@ -37,7 +37,8 @@ CACHE_TTL = 600
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 session = None  
 
-
+def user_cooldown_key(interaction: discord.Interaction):
+    return interaction.user.id  
 
 async def init_db():
     """Initialize database tables via Supabase REST API"""
@@ -774,28 +775,45 @@ async def unban(interaction: discord.Interaction, user_id: str):
 
 @tree.command(
     name="accountreview",
-    description="Account Review request instructions."
+    description="Account Review request instructions. 30 second cooldown."
+)
+@app_commands.guild_only()
+@app_commands.checks.cooldown(
+    rate=1,           
+    per=30,           
+    key=user_cooldown_key
 )
 async def accountreview(interaction: discord.Interaction):
     await interaction.response.defer(thinking=False)
 
     embed = discord.Embed(
-        title="Kotuh's Account Review Guide",
+        title="Kotuh’s Account Review Guide",
         description=(
-            "**Welcome!**\n\n"
-            "To request an account review:\n\n"
-            "1. Get the **Account Review Queue** role from the **Roles Channel**.\n"
-            "2. Read the pinned messages in **Minor Announcements** for further instructions.\n"
-            "3. Post your builds in the designated channels (**Resets Weekly**).\n\n"
-            "**Note:** Reviews take time—please be patient.\n\n"
-            "-# Accounts are selected by **community vote** to keep reviews unique.\n\n"
-            "-# Kotuh is stupid. Do not expect a concise or well-articulated review."
+            "**Welcome Gooners!**\n\n"
+            "Interested in getting your account reviewed? Follow the steps below to enter the review pool.\n\n"
+
+            "**How to request a review:**\n"
+            "1. Obtain the **Account Review Queue** role from the **Roles Channel**.\n"
+            "2. Carefully read the pinned messages in **Minor Announcements**.\n"
+            "3. Post your builds in the designated channel (**Resets Weekly**).\n\n"
+
+            "**Alternative ways to be selected:**\n"
+            "- You may occasionally be chosen by winning a giveaway hosted in the **Giveaway Channel**.\n\n"
+
+            "**Important notes:**\n"
+            "- Kotuh sometimes forgets to actually review accounts.\n"
+            "- Winners from the past 6 months are not eligible to participate again, ensuring everyone gets a fair chance.\n"
+            "- Accounts are selected by **community vote** to keep reviews Unique and Interesting for viewers.\n\n"
+
+            "-# Kotuh is stupid. Do not expect a concise or well-articulated review. He doesn't even have E6 Harmony MC."
         ),
         color=0x00FFCC
     )
+
     embed.set_footer(text="Kotuh is fuckin Bald!")
 
     await interaction.followup.send(embed=embed)
+
 
 
 

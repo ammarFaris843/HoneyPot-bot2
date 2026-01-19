@@ -789,7 +789,7 @@ async def accountreview(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Kotuh’s Account Review Guide",
         description=(
-            "**Welcome Gooners!**\n\n"
+            "**Welcome!**\n\n"
             "Interested in getting your account reviewed? Follow the steps below to enter the review pool.\n\n"
 
             "**How to request a review:**\n"
